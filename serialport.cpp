@@ -12,10 +12,12 @@
 #include <QThreadPool>
 #include <QCoreApplication>
 #include <QDebug>
+#include <signal.h>
 
 
 SerialPort::SerialPort(QObject *parent, QEvent::Type dataAvailable) :
     QObject(parent),
+    mThreadId(pthread_self()),
     mDataAvailableEvent(dataAvailable),
     mBytesReceived(0),
     mQuit(false),
@@ -23,7 +25,6 @@ SerialPort::SerialPort(QObject *parent, QEvent::Type dataAvailable) :
     mSynced(false)
 {
     init();
-    setAutoDelete(true);
 }
 
 SerialPort::~SerialPort()
@@ -41,18 +42,21 @@ void SerialPort::open()
 {
     close();
     mQuit = false;
-    QThreadPool::globalInstance()->start(this);
+    if (pthread_create(&mThreadId, 0, start, this) != 0) throw std::runtime_error("Couldn't start thread");
 
 }
 
 void SerialPort::close()
 {
-    qDebug() << QThreadPool::globalInstance()->activeThreadCount();
-    if (QThreadPool::globalInstance()->activeThreadCount() > 0 && !mQuit)
+    if (!pthread_equal(mThreadId, pthread_self()))
     {
         mQuit = true;
         qDebug() << "Quitting";
-        QThreadPool::globalInstance()->waitForDone(1000);
+        pthread_kill(mThreadId, SIGUSR1);
+        void* ret;
+        pthread_join(mThreadId, &ret);
+        qDebug() << "Return" << ret;
+        mThreadId = pthread_self();
     }
 }
 
@@ -61,6 +65,13 @@ void SerialPort::get(QList<uint32_t>& data)
     QMutexLocker ml(&mLock);
     data.append(mSignalData);
     mSignalData.clear();
+}
+
+void* SerialPort::start(void* obj)
+{
+    SerialPort* po = (SerialPort*)obj;
+    po->run();
+    return (void*)7;
 }
 
 void SerialPort::run()

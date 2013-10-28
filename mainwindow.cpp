@@ -5,6 +5,9 @@
 #include <QCloseEvent>
 #include <QTime>
 #include <QDebug>
+#include <QStaticText>
+
+#include <cmath>
 
 
 MainWindow::MainWindow(QWidget *parent) :
@@ -12,7 +15,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui(new Ui::MainWindow),
     mSerial(this, DATA_AVAILABLE),
     mOffset(0.0f),
-    mPixelPerSecond(1000.0f)
+    mPixelPerSecond(1000000.0f)
 {
     ui->setupUi(this);
     mTriggerTime = QTime::currentTime();
@@ -33,8 +36,8 @@ bool MainWindow::event(QEvent* event)
         {
             qDebug() << "CLEAR";
             mData.clear();
-            mTriggerTime = now;
         }
+        mTriggerTime = now;
         mSerial.get(mData);
         update();
         return true;
@@ -45,10 +48,33 @@ bool MainWindow::event(QEvent* event)
 void MainWindow::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
+    float dy = height() / 8.0f;
+
+    QPen light(Qt::white, 1);
+    QPen medium(Qt::white, 2);
+    QPen hard(Qt::white, 4);
+    float x = -mOffset * mPixelPerSecond;
+    int exp = std::log10(mPixelPerSecond);
+    float dx = 10.0f / std::pow(10.0f, exp);
+    int count = 0;
+    while (x < width())
+    {
+        if ((count % 10) == 0)
+        {
+            p.setPen(hard);
+            p.drawText(QPointF(x, dy / 2), QString("%1").arg(x / mPixelPerSecond));
+        }
+        else if ((count % 5) == 0) p.setPen(medium);
+        else p.setPen(light);
+        p.drawLine(x, 0, x, height());
+        x += dx * mPixelPerSecond;
+        ++count;
+    }
+
+
     p.setPen(QPen(Qt::black, 1));
 
-    float x = -mOffset;
-    float dy = height() / 8.0f;
+    x = -mOffset * mPixelPerSecond;
     bool v[2][8];
 
     for (int i = 0; i < mData.size(); ++i)
@@ -62,14 +88,22 @@ void MainWindow::paintEvent(QPaintEvent*)
         if (i != 0)
         {
             float dx = time(d) * mPixelPerSecond;
-            for (int j = 0; j < 8; ++j)
+            if (x + dx > 0 && x < width())
             {
-                float yl = (j + 0.9f) * dy;
-                float yh = (j + 0.1f) * dy;
-                p.drawLine(x, v[1][j] ? yh : yl, x + dx, v[1][j] ? yh : yl);
-                if (v[1][j] != v[0][j])
+                for (int j = 0; j < 8; ++j)
                 {
-                    p.drawLine(x + dx, v[1][j] ? yh : yl, x + dx, v[0][j] ? yh : yl);
+                    float yl = (j + 0.9f) * dy;
+                    float yh = (j + 0.1f) * dy;
+                    p.drawLine(x, v[1][j] ? yh : yl, x + dx, v[1][j] ? yh : yl);
+                    if (v[1][j] != v[0][j])
+                    {
+                        p.drawLine(x + dx, v[1][j] ? yh : yl, x + dx, v[0][j] ? yh : yl);
+                    }
+                    if (j == 7)
+                    {
+                        p.drawText(QPointF(x + dx, yh), QString("%1").arg(d & 0xffffff));
+                        p.drawText(QPointF(x + dx, yl), QString("%1").arg(d >> 24));
+                    }
                 }
             }
             x += dx;
@@ -113,5 +147,5 @@ void MainWindow::mouseReleaseEvent(QMouseEvent* event)
 
 float MainWindow::time(uint32_t data)
 {
-    return (data & 0xffffff) / 200000000.0f;
+    return ((data & 0xffffff) + 1) / 200000000.0f;
 }

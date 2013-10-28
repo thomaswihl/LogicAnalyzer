@@ -7,8 +7,9 @@
 #include <QEvent>
 
 #include <stdint.h>
+#include <pthread.h>
 
-class SerialPort : public QObject, public QRunnable
+class SerialPort : public QObject
 {
     Q_OBJECT
 public:
@@ -26,11 +27,13 @@ signals:
 public slots:
 
 protected:
-    virtual void run();
+    static void* start(void* obj);
+    void run();
     void feedByte(uint8_t byte);
     void init();
     
 private:
+    pthread_t mThreadId;
     QEvent::Type mDataAvailableEvent;
     QString mDevice;
     unsigned mBytesReceived;
